@@ -33,6 +33,7 @@ args = parser.parse_args()
 # SETUP
 ################################################################################################
 path_results = f"{PATH_RESULTS}/{args.experiment_name}/{args.dataset}/{args.character}/{args.model_name.replace('/', '_')}.csv"
+table_path = f"{PATH_RESULTS}/tables"
 
 def action_likelihood(decision : int, scenario_id : str, path : str = path_results) -> float:
     # action = 0 for action1, 1 for action2
@@ -61,4 +62,4 @@ def llm_reward_table():
 # RUN COMPUTATION AND STORE RESULTS
 ################################################################################################
 
-np.save(f"{args.character}.npy", llm_reward_table())
+np.save(f"{table_path}/{args.character}.npy", llm_reward_table())
