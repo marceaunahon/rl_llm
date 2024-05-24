@@ -27,6 +27,8 @@ from src.config import PATH_API_KEYS, PATH_HF_CACHE, PATH_OFFLOAD
 
 API_TIMEOUTS = [1, 2, 4, 8, 16, 32]
 
+
+
 ####################################################################################
 # MODELS DICT
 ####################################################################################
@@ -390,6 +392,14 @@ MODELS = dict(
             "model_name": "google/text-bison-001",
             "8bit": False,
             "likelihood_access": False,
+            "endpoint": None,
+        },
+        "mistralai/Mixtral-8x7B-v0.1": {
+            "company": "mistralai",
+            "model_class": "MistralModel",
+            "model_name": "mistralai/Mixtral-8x7B-v0.1",
+            "8bit": True,
+            "likelihood_access": True,
             "endpoint": None,
         },
     }
@@ -1280,6 +1290,102 @@ class BloomZModel(LanguageModel):
         result["answer"] = completion
 
         return result
+    
+# ----------------------------------------------------------------------------------------------------------------------
+# MISTRAL MODEL WRAPPER
+# ----------------------------------------------------------------------------------------------------------------------
+
+class MistralModel(LanguageModel):
+    """MistralAI Model Wrapper --> Access through HuggingFace Model Hub"""
+    
+    def __init__(self, model_name: str):
+        super().__init__(model_name)
+        assert MODELS[model_name]["model_class"] == "MistralModel", (
+            f"Errorneous Model Instatiation for {model_name}"
+        )
+
+        # Setup Device, Model and Tokenizer
+        self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self._model = AutoModelForCausalLM.from_pretrained(
+            pretrained_model_name_or_path=self._model_name,
+            cache_dir=PATH_HF_CACHE,
+            torch_dtype="auto",
+            device_map="auto",
+            offload_folder=PATH_OFFLOAD,
+        ).to(self._device)
+
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            pretrained_model_name_or_path=self._model_name, cache_dir=PATH_HF_CACHE
+        )
+
+    def get_greedy_answer(
+        self, prompt_base: str, prompt_system: str, max_tokens: int
+    ) -> str:
+        result = {
+            "timestamp": get_timestamp(),
+        }
+
+        # Greedy Search
+        input_ids = self._tokenizer(
+            f"{prompt_system}{prompt_base}", return_tensors="pt"
+        ).input_ids.to(self._device)
+        response = self._model.generate(
+            input_ids,
+            max_new_tokens=max_tokens,
+            length_penalty=0,
+            output_scores=True,
+            return_dict_in_generate=True,
+        )
+
+        # Parse Output --> mistral Repeats prompt text before answer --> Cut it
+        completion = self._tokenizer.decode(
+            response.sequences[0], skip_special_tokens=True
+        )
+        result["answer_raw"] = completion
+        len_prompt = len(f"{prompt_system}{prompt_base}")
+        completion = completion[len_prompt:].strip()
+        result["answer"] = completion
+
+        return result
+
+    def get_top_p_answer(
+        self,
+        prompt_base: str,
+        prompt_system: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+    ) -> str:
+        result = {
+            "timestamp": get_timestamp(),
+        }
+
+        # Greedy Search
+        input_ids = self._tokenizer(
+            f"{prompt_system}{prompt_base}", return_tensors="pt"
+        ).input_ids.to(self._device)
+        response = self._model.generate(
+            input_ids,
+            max_new_tokens=max_tokens,
+            length_penalty=0,
+            do_sample=True,
+            top_p=top_p,
+            temperature=temperature,
+            output_scores=True,
+            return_dict_in_generate=True,
+        )
+
+        # Parse Output --> mistral repeats prompt text before answer --> Cut it
+        completion = self._tokenizer.decode(
+            response.sequences[0], skip_special_tokens=True
+        )
+        result["answer_raw"] = completion
+        len_prompt = len(f"{prompt_system}{prompt_base}")
+        completion = completion[len_prompt:].strip()
+        result["answer"] = completion
+
+        return result
+
 
 
 ####################################################################################
@@ -1289,6 +1395,8 @@ class BloomZModel(LanguageModel):
 
 def create_model(model_name):
     """Init Models from model_name only"""
+    from huggingface_hub import login
+    login("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")
     if model_name in MODELS:
         class_name = MODELS[model_name]["model_class"]
         cls = getattr(sys.modules[__name__], class_name)
