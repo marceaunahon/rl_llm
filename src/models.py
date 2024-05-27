@@ -1306,13 +1306,17 @@ class MistralModel(LanguageModel):
 
         # Setup Device, Model and Tokenizer
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        print(self._device)
         self._model = AutoModelForCausalLM.from_pretrained(
             pretrained_model_name_or_path=self._model_name,
             cache_dir=PATH_HF_CACHE,
             torch_dtype="auto",
             device_map="auto",
             offload_folder=PATH_OFFLOAD,
-        ).to(self._device)
+        )
+        print(self._model)
+        self._model.to(self._device)
+        print(self._model)
 
         self._tokenizer = AutoTokenizer.from_pretrained(
             pretrained_model_name_or_path=self._model_name, cache_dir=PATH_HF_CACHE
