@@ -84,4 +84,6 @@ def llm_reward_table() -> np.ndarray:
 if not os.path.exists(path_table):
     os.makedirs(path_table)
 
-np.save(f"{path_table}/{args.character}_{args.model_name}.npy", llm_reward_table())
+
+model_id = "x"
+np.save(f"{path_results}/{model_id.split('/')[0]}_{model_id.split('/')[-1]}.npy", llm_reward_table())

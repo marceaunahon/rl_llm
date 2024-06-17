@@ -8,6 +8,7 @@ import cohere
 import anthropic
 from openai import OpenAI
 import google.generativeai as palm
+from huggingface_hub import login
 
 from google.api_core import retry
 from typing import List, Dict
@@ -1303,6 +1304,11 @@ class MistralModel(LanguageModel):
         assert MODELS[model_name]["model_class"] == "MistralModel", (
             f"Errorneous Model Instatiation for {model_name}"
         )
+        
+        # Setup Mistral Client
+        with open("mistral_login.txt", encoding="utf-8") as f:
+            key = f.read()
+        login(key)
 
         # Setup Device, Model and Tokenizer
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -1312,11 +1318,12 @@ class MistralModel(LanguageModel):
             cache_dir=PATH_HF_CACHE,
             torch_dtype="auto",
             device_map="auto",
-            offload_folder=PATH_OFFLOAD,
+            offload_folder=PATH_OFFLOAD
         )
-        print(self._model)
+        # self._model.to_bettertransformer()
+        print("Model Loaded")
         self._model.to(self._device)
-        print(self._model)
+        print("Model to Device")
 
         self._tokenizer = AutoTokenizer.from_pretrained(
             pretrained_model_name_or_path=self._model_name, cache_dir=PATH_HF_CACHE
@@ -1399,8 +1406,6 @@ class MistralModel(LanguageModel):
 
 def create_model(model_name):
     """Init Models from model_name only"""
-    from huggingface_hub import login
-    login("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")
     if model_name in MODELS:
         class_name = MODELS[model_name]["model_class"]
         cls = getattr(sys.modules[__name__], class_name)
