@@ -23,6 +23,7 @@ class Ladder(Env):
         self.actions = np.array([0, 1, 2])
         self.transition_matrix = np.array([
                 [ # action 0
+                    #action 0, action 1, action 2, action 3
                     [0.0, 0.8, 0.2, 0.0], #state 0
                     [0.0, 0.0, 0.0, 0.0], #state 1
                     [0.0, 0.0, 0.0, 0.0], #state 2
@@ -30,6 +31,7 @@ class Ladder(Env):
                 ]
                 ,
                 [ # action 1
+                    #action 0, action 1, action 2, action 3
                     [0.0, 0.1, 0.8, 0.1], #state 0
                     [0.0, 0.0, 0.0, 0.0], #state 1
                     [0.0, 0.0, 0.0, 0.0], #state 2
@@ -37,7 +39,8 @@ class Ladder(Env):
                 ]
                 ,
                 [ # action 2
-                    [0.0, 0.0, 0.2, 0.8], #state 0
+                    #action 0, action 1, action 2, action 3
+                    [0.0, 0.0, 0.05, 0.95], #state 0
                     [0.0, 0.0, 0.0, 0.0], #state 1
                     [0.0, 0.0, 0.0, 0.0], #state 2
                     [0.0, 0.0, 0.0, 0.0]  #state 3

@@ -103,22 +103,39 @@ class MBRLAgent(RLAgent):
         self.nb_visits = np.zeros(self.nb_states)
         self.actions_history = [],[],[]
         self.actions_history_strange_value = [],[],[]
-        self.likelihood_threshold = 0.01
+        self.last_20 = [], [], []
+        self.likelihood_threshold = 20
         self.models = []
         self.change_idx = [0]
+        self.converged = False
+        self.likelihoods = [], [], []
 
-    def likelihood(self, state, history) -> int:
+    def proba(self, state, history) -> float:
         """
-        Computes the likelihood of a state given the history of actions.
+        Computes the probability of a state given the history of actions.
+
+        Args:
+            state: The current state.
+            history: The history of actions.    
+
+        Returns:
+            The probability of the state.
+        """
+        return np.sum([s == state for s in history]) / len(history)
+    
+    def log_likelihood(self, state, history) -> float:
+        """
+        Computes the log-likelihood of a state given the history of actions.
 
         Args:
             state: The current state.
             history: The history of actions.
 
         Returns:
-            The likelihood of the state.
+            The log-likelihood of the state.
         """
-        return np.sum([s == state for s in history]) / len(history)
+        return - np.log(self.proba(state, history))
+
 
     def update_history(self, action) -> None: 
         
@@ -130,30 +147,65 @@ class MBRLAgent(RLAgent):
         Args:
             action: The action taken.
         """
-        self.actions_history[action].append(self.state)
-
-        if len(self.actions_history[action][self.change_idx[-1]:]) > 100: #on part du principe que le modèle ne change pas avant 100 actions
-            if self.likelihood(self.state, self.actions_history[action][self.change_idx[-1]:]) < self.likelihood_threshold :
-                self.actions_history_strange_value[action].append(True)
-        else :
+        self.actions_history[action].append(self.state) #add the state to the history of the corresponding action
+        if len(self.last_20[action]) == 20:
+            self.last_20[action].pop(0) #remove the first state of the last 20 states of the corresponding action
+        self.last_20[action].append(self.state) #add the state to the last 20 states of the corresponding action
+        last_20_likeliood = np.sum([self.log_likelihood(state, self.actions_history[action]) for state in self.last_20[action]]) #compute the log-likelihood of the last 20 states of the corresponding action
+        self.likelihoods[action].append(last_20_likeliood) #add the log-likelihood to the likelihoods of the corresponding action
+        if last_20_likeliood > self.likelihood_threshold: #if the log-likelihood is greater than 20, the action is considered as strange
+            self.actions_history_strange_value[action].append(True)
+        else:
             self.actions_history_strange_value[action].append(False)
 
-        # if 5 of the 10 last actions are strange, we create a new model
-        if sum(self.actions_history_strange_value[action][-100:]) >= 10:
-            if len(self.models) < 2: #first model change or second model change : we create a new model (we do not change to the first model)
+        if sum(self.actions_history_strange_value[action][-20:]) >= 5: #if 5 of the 10 last actions are strange, we create a new model
+            if len(self.models) == 0 : #first model change : we create a new model 
+                self.finalise_model()
                 self.models.append(self.transitions)
                 self.transitions = np.zeros((self.nb_states, self.nb_actions, self.nb_states))
-            else: #there has already been a model change
-                likelihoods = np.zeros(len(self.change_idx)-1)
-                for i in range(len(self.models)): #compute likelihoods for each model, does one fit the history ?
-                    likelihoods[i] = self.likelihood(self.state, self.actions_history[action][self.change_idx[i]:self.change_idx[i+1]])
-                if np.max(likelihoods) > (1-self.likelihood_threshold): #there is a model that fits the history
-                    self.models.append(self.transitions)
-                    self.transitions = self.models[np.argmax(likelihoods)]
-                else: #no model fits the history, we create a new one
-                    self.models.append(self.transitions)
-                    self.transitions = np.zeros((self.nb_states, self.nb_actions, self.nb_states))
-            self.change_idx.append(np.sum([len(self.actions_history[action]) for action in self.actions])-1)
+                self.actions_history = [],[],[]
+                self.actions_history_strange_value = [],[],[]
+                self.last_20 = [], [], []
+            # if len(self.models) > 0 : #there has already been a model change
+            #     self.finalise_model()
+            #     self.models.append(self.transitions)
+            #     likelihoods = np.zeros(len(self.change_idx)-1)
+            #     for i in range(len(self.models)): #compute likelihoods for each model, does one fit the history ?
+                    #TODO calculer directement en fonction des modèles et pas des historiques
+
+        # self.likelihoods[action].append(self.likelihood(self.state, self.actions_history[action][self.change_idx[-1]:]))
+
+        
+
+        # if len(self.actions_history[action][self.change_idx[-1]:]) > 100: #on part du principe que le modèle ne change pas avant 100 actions
+            
+        #     if self.likelihood(self.state, self.actions_history[action][self.change_idx[-1]:]) < self.likelihood_threshold :
+        #         self.actions_history_strange_value[action].append(True)
+        #     else :
+        #         self.actions_history_strange_value[action].append(False)
+        # else :
+        #     self.actions_history_strange_value[action].append(False)
+        # if len(self.actions_history[action][self.change_idx[-1]:]) > 200:
+        #     if sum(self.actions_history_strange_value[action][-100:]) <= 20:
+        #         print("Rien de bizarre")
+        #         self.converged = True
+
+        # if 5 of the 10 last actions are strange, we create a new model
+        # if sum(self.actions_history_strange_value[action][-100:]) >= 25:
+        #     if len(self.models) < 2: #first model change or second model change : we create a new model (we do not change to the first model)
+        #         self.models.append(self.transitions)
+        #         self.transitions = np.zeros((self.nb_states, self.nb_actions, self.nb_states))
+        #     else: #there has already been a model change
+        #         likelihoods = np.zeros(len(self.change_idx)-1)
+        #         for i in range(len(self.models)): #compute likelihoods for each model, does one fit the history ?
+        #             likelihoods[i] = self.likelihood(self.state, self.actions_history[action][self.change_idx[i]:self.change_idx[i+1]])
+        #         if np.max(likelihoods) > (1-self.likelihood_threshold): #there is a model that fits the history
+        #             self.models.append(self.transitions)
+        #             self.transitions = self.models[np.argmax(likelihoods)]
+        #         else: #no model fits the history, we create a new one
+        #             self.models.append(self.transitions)
+        #             self.transitions = np.zeros((self.nb_states, self.nb_actions, self.nb_states))
+        #     self.change_idx.append(np.sum([len(self.actions_history[action]) for action in self.actions])-1)
 
         #TODO : regarder en arrière à quel moment on a eu un changement de modèle
 
@@ -185,57 +237,6 @@ class MBRLAgent(RLAgent):
         # TODO : ne garder qu'un nb_visits (pas visits et nb_visits)
 
 
-class QLearningAgent(RLAgent):
-    """
-    QLearningAgent class represents a Q-learning agent.
-
-    Args:
-        env: The environment in which the agent interacts.
-
-    Attributes:
-        gamma: Discount factor for future rewards.
-        epsilon: Probability of choosing a random action.
-        Q: Q-value table.
-        nb_episodes: Number of training episodes.
-
-    Methods:
-        choose_action: Chooses an action based on an epsilon-greedy policy.
-        train: Trains the agent using the Q-learning algorithm.
-    """
-
-    def __init__(self, env: Env) -> None:
-        """
-        Initializes the QLearningAgent with the given environment.
-
-        Args:
-            env: The environment in which the agent interacts.
-        """
-        super().__init__(env)
-        self.gamma = 0.9
-        self.epsilon = 0.01
-        self.Q = np.zeros((self.nb_states, len(self.actions)))
-        self.nb_episodes = 1000
-
-    def train(self) -> None:
-        """
-        Trains the agent using the Q-learning algorithm.
-        """
-        for _ in range(self.nb_episodes):
-            self.state = self.env.reset()
-            done = False
-            while not done:
-                action = self.e_greedy()
-                next_state, reward, done = self.env.step(action)
-                self.env.render()
-                
-                # Update Q-value using the Q-learning update rule
-                self.Q[self.state, action] = reward + self.gamma * np.max(self.Q[next_state])
-                self.state = next_state 
-
-        # Derive policy from the Q-value table
-        self.policy = np.argmax(self.Q, axis=1)
-
-
 class ValueIterationAgent(MBRLAgent):
     """
     ValueIterationAgent class represents an agent that uses value iteration.
@@ -265,14 +266,6 @@ class ValueIterationAgent(MBRLAgent):
         self.epsilon = 0.01
         self.V = np.zeros(self.nb_states)
 
-    def init_rewards(self) -> None:
-        """
-        Initializes the rewards from a random profile.
-        """
-        profile = np.random.randint(4)
-        self.rewards = np.zeros(4)
-        self.rewards[1:] = self.rewards_table[profile]
-
     def value_iteration(self) -> None:
         """
         Trains the agent using the value iteration algorithm.
@@ -285,11 +278,9 @@ class ValueIterationAgent(MBRLAgent):
                 # Update value function using the Bellman equation
                 for a in self.actions:
                     for s_prime in self.states:
-                        # V[s] = max(V[s], self.transition_matrix[a][s][s_prime] * (self.rewards[s_prime] + self.gamma * V[s_prime]))
                         self.V[s] = max(self.V[s], self.transitions[s][int(a)][s_prime] * (self.rewards[s_prime] + self.gamma * self.V[s_prime]))
                 delta = max(delta, abs(v - self.V[s]))
                 
-
             if delta < self.epsilon:
                 break
 
@@ -311,13 +302,42 @@ class ValueIterationAgent(MBRLAgent):
         Explores the environment.
         """
         for _ in range(1000):
+            if _ == 500:
+                print("\n ############################### \n")
+                print("CHANGEMENT DE MODELE")
+                print("\n ############################### \n")
+                self.env.transition_matrix = np.array([
+                [ # action 0
+                    [0.0, 0.775, 0.225, 0.0], #state 0
+                    [0.0, 0.0, 0.0, 0.0], #state 1
+                    [0.0, 0.0, 0.0, 0.0], #state 2
+                    [0.0, 0.0, 0.0, 0.0]  #state 3
+                ]
+                ,
+                [ # action 1
+                    [0.0, 0.135, 0.73, 0.135], #state 0
+                    [0.0, 0.0, 0.0, 0.0], #state 1
+                    [0.0, 0.0, 0.0, 0.0], #state 2
+                    [0.0, 0.0, 0.0, 0.0]  #state 3
+                ]
+                ,
+                [ # action 2
+                    [0.0, 0.0, 0.075, 0.925], #state 0
+                    [0.0, 0.0, 0.0, 0.0], #state 1
+                    [0.0, 0.0, 0.0, 0.0], #state 2
+                    [0.0, 0.0, 0.0, 0.0]  #state 3
+                ]
+                    ])
             self.state = self.env.reset()
             action = np.random.choice(self.actions)
+            # action = 0
             next_state, reward, done = self.env.step(action)
             #self.env.render()
             self.update_model(self.state, action, reward, next_state)
             self.state = next_state
+            self.update_history(action)
         self.finalise_model()
+        self.models.append(self.transitions)
         
     def train(self) -> None:
         """
@@ -333,4 +353,24 @@ if __name__ == '__main__':
     agent = ValueIterationAgent(env)
     # Run the agent in the environment
     agent.run()
-    print(agent.transitions)
+    # print(agent.transitions)
+    print(len(agent.models))
+    print("\n ############################### \n")
+    print(agent.models[0][0])
+    print("\n ############################### \n")
+    print(agent.models[1][0])
+
+    # for i in range(len(agent.actions)):
+    #     print(f"Action {i}")
+    #     print(agent.actions_history[i])
+    #     print("len : ", len(agent.actions_history[i]))
+    #     print("\n ############################### \n")
+    #     print("Before 1000")
+    #     print(agent.actions_history_strange_value[i][:333])
+    #     print("After 1000")
+    #     print(agent.actions_history_strange_value[i][333:])
+    #     print("len : ", len(agent.actions_history_strange_value[i]))
+
+    # print(agent.actions_history_strange_value[0])
+    # print(agent.actions_history[0])
+    # print(agent.likelihoods[0])
